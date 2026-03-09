@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ViewSearch - 시각적 웹 검색</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Pretendard:wght@400;600;800&display=swap');
+        body { font-family: 'Pretendard', sans-serif; background-color: #1a1b1e; color: #e8eaed; scroll-behavior: smooth; }
+        mark { background-color: rgba(66, 133, 244, 0.3); color: #8ab4f8; border-radius: 4px; padding: 0 2px; }
+        .loader { border-top-color: #4285F4; animation: spinner 1.5s linear infinite; }
+        @keyframes spinner { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: #1a1b1e; }
+        ::-webkit-scrollbar-thumb { background: #3c4043; border-radius: 10px; }
+        ::-webkit-scrollbar-thumb:hover { background: #5f6368; }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col items-center justify-center p-6 transition-all duration-700" id="mainBody">
+
+    <div id="searchContainer" class="w-full max-w-2xl flex flex-col items-center transition-all duration-700 ease-in-out z-50">
+        <h1 class="text-7xl font-extrabold mb-10 tracking-tighter cursor-pointer select-none" onclick="location.reload()">
+            <span class="text-[#4285F4]">V</span>iew<span class="text-[#FBBC05]">S</span><span class="text-[#EA4335]">e</span><span class="text-[#34A853]">a</span>rch
+        </h1>
+
+        <div class="relative w-full group">
+            <input type="text" id="searchInput" 
+                class="w-full pl-8 pr-16 py-5 bg-[#2a2b2e] hover:bg-[#35363a] focus:bg-[#2a2b2e] rounded-2xl border border-[#3c4043] focus:border-[#8ab4f8] outline-none text-xl transition-all shadow-2xl text-white placeholder-gray-500"
+                placeholder="검색어를 입력하세요..."
+                autocomplete="off"
+                onfocus="showHistory()"
+                onblur="setTimeout(hideHistory, 200)"
+                onkeydown="if(event.key === 'Enter') executeViewSearch()">
+            
+            <button onclick="executeViewSearch()" class="absolute right-6 top-1/2 -translate-y-1/2 text-gray-400 group-hover:text-[#4285F4] transition-colors">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                </svg>
+            </button>
+
+            <div id="historyBox" class="absolute top-full left-0 w-full mt-2 bg-[#2a2b2e] border border-[#3c4043] rounded-2xl shadow-2xl hidden flex-col overflow-hidden z-50">
+                <div class="flex justify-between items-center px-5 py-3 border-b border-[#3c4043]">
+                    <span class="text-xs font-bold text-gray-400">최근 검색어</span>
+                    <button onclick="clearHistory()" class="text-xs text-red-400 hover:text-red-300">전체 삭제</button>
+                </div>
+                <div id="historyList" class="flex flex-col"></div>
+            </div>
+        </div>
+    </div>
+
+    <div id="results" class="w-full max-w-5xl mt-12 hidden opacity-0 transition-opacity duration-700 pb-20">
+        <div id="loading" class="flex flex-col items-center justify-center gap-4 py-20 hidden">
+            <div class="loader ease-linear rounded-full border-4 border-t-4 border-gray-700 h-12 w-12"></div>
+            <p class="text-gray-400 animate-pulse font-medium">실시간 웹 데이터를 수집하는 중...</p>
+        </div>
+        <div id="realWebResults" class="grid grid-cols-1 md:grid-cols-2 gap-8"></div>
+    </div>
+
+    <button id="topBtn" onclick="window.scrollTo({top: 0, behavior: 'smooth'})" 
+        class="fixed bottom-8 right-8 bg-[#4285F4] hover:bg-blue-600 text-white p-4 rounded-full shadow-lg opacity-0 pointer-events-none transition-all duration-300 translate-y-10 z-50">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7" />
+        </svg>
+    </button>
+
+    <script>
+        let searchHistory = JSON.parse(localStorage.getItem('viewSearchHistory')) || [];
+
+        function renderHistory() {
+            const list = document.getElementById('historyList');
+            if (searchHistory.length === 0) {
+                list.innerHTML = `<div class="px-5 py-4 text-sm text-gray-500 text-center">최근 검색어 내역이 없습니다.</div>`;
+                return;
+            }
+            list.innerHTML = searchHistory.map(term => `
+                <button onclick="document.getElementById('searchInput').value='${term}'; executeViewSearch();" 
+                    class="w-full text-left px-5 py-3 text-gray-300 hover:bg-[#35363a] hover:text-[#8ab4f8] transition-colors flex items-center gap-3">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                    ${term}
+                </button>
+            `).join('');
+        }
+
+        function saveHistory(query) {
+            searchHistory = searchHistory.filter(term => term !== query);
+            searchHistory.unshift(query);
+            if (searchHistory.length > 5) searchHistory.pop();
+            localStorage.setItem('viewSearchHistory', JSON.stringify(searchHistory));
+            renderHistory();
+        }
+
+        function clearHistory() {
+            searchHistory = [];
+            localStorage.removeItem('viewSearchHistory');
+            renderHistory();
+        }
+
+        function showHistory() {
+            renderHistory();
+            document.getElementById('historyBox').classList.remove('hidden');
+            document.getElementById('historyBox').classList.add('flex');
+        }
+
+        function hideHistory() {
+            document.getElementById('historyBox').classList.add('hidden');
+            document.getElementById('historyBox').classList.remove('flex');
+        }
+
+        window.addEventListener('scroll', () => {
+            const topBtn = document.getElementById('topBtn');
+            if (window.scrollY > 300) {
+                topBtn.classList.remove('opacity-0', 'pointer-events-none', 'translate-y-10');
+                topBtn.classList.add('opacity-100', 'pointer-events-auto', 'translate-y-0');
+            } else {
+                topBtn.classList.add('opacity-0', 'pointer-events-none', 'translate-y-10');
+                topBtn.classList.remove('opacity-100', 'pointer-events-auto', 'translate-y-0');
+            }
+        });
+
+        function executeViewSearch() {
+            const query = document.getElementById('searchInput').value.trim();
+            if (!query) return;
+
+            saveHistory(query);
+            document.getElementById('searchInput').blur();
+
+            const body = document.getElementById('mainBody');
+            const searchContainer = document.getElementById('searchContainer');
+            const resultsDiv = document.getElementById('results');
+            const resultsContainer = document.getElementById('realWebResults');
+            const loading = document.getElementById('loading');
+            
+            body.classList.remove('justify-center');
+            body.classList.add('justify-start', 'pt-12'); 
+            searchContainer.classList.add('sticky', 'top-4'); 
+            
+            resultsDiv.classList.remove('hidden');
+            setTimeout(() => resultsDiv.classList.add('opacity-100'), 100); 
+            
+            resultsContainer.innerHTML = ''; 
+            loading.classList.remove('hidden'); 
+
+            const url = `https://ko.wikipedia.org/w/api.php?action=query&format=json&origin=*&generator=search&gsrsearch=${encodeURIComponent(query)}&gsrlimit=20&prop=pageimages|extracts&piprop=original|thumbnail&pithumbsize=600&exintro&explaintext&exsentences=3`;
+
+            fetch(url)
+                .then(response => response.json())
+                .then(data => {
+                    loading.classList.add('hidden');
+                    
+                    if (!data.query || !data.query.pages) {
+                        resultsContainer.innerHTML = `<div class="col-span-full p-20 bg-[#2a2b2e] rounded-3xl text-center text-gray-400 border border-[#3c4043]">"${query}"에 대한 검색 결과가 없습니다.</div>`;
+                        return;
+                    }
+
+                    const pages = Object.values(data.query.pages);
+
+                    resultsContainer.innerHTML = pages.map(page => {
+                        const pageUrl = `https://ko.wikipedia.org/wiki/${encodeURIComponent(page.title)}`;
+                        let imageHTML = '';
+                        
+                        if (page.thumbnail && page.thumbnail.source) {
+                            imageHTML = `
+                                <div class="w-full h-56 overflow-hidden bg-black relative">
+                                    <img src="${page.thumbnail.source}" class="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700 opacity-80 group-hover:opacity-100">
+                                </div>
+                            `;
+                        }
+
+                        // 💡 핵심: onclick="return confirm('이 사이트에 들어가시겠습니까?');" 가 추가되었습니다!
+                        return `
+                            <div class="bg-[#2a2b2e] rounded-3xl overflow-hidden group border border-[#3c4043] hover:border-[#4285F4] transition-all duration-300 shadow-lg flex flex-col">
+                                ${imageHTML}
+                                <div class="p-7 flex flex-col flex-grow">
+                                    <div class="flex items-center gap-2 mb-3 bg-[#1a1b1e] px-3 py-1.5 rounded-full border border-[#3c4043] w-max max-w-full">
+                                        <div class="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
+                                        <span class="text-[10px] text-gray-400 truncate font-mono">${pageUrl}</span>
+                                    </div>
+                                    
+                                    <h3 class="text-2xl font-bold text-[#8ab4f8] group-hover:text-blue-400 mb-3 tracking-tight">
+                                        <a href="${pageUrl}" target="_blank" onclick="return confirm('이 사이트에 들어가시겠습니까?');">
+                                            ${highlight(page.title, query)}
+                                        </a>
+                                    </h3>
+                                    <p class="text-gray-400 text-sm leading-relaxed line-clamp-4 flex-grow">${highlight(page.extract, query)}</p>
+                                    
+                                    <a href="${pageUrl}" target="_blank" onclick="return confirm('이 사이트에 들어가시겠습니까?');" class="mt-6 w-max inline-flex items-center text-xs font-bold bg-[#3c4043] hover:bg-[#4285F4] px-4 py-2 rounded-lg text-white transition-colors">
+                                        문서 열기 
+                                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 ml-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+                                    </a>
+                                </div>
+                            </div>
+                        `;
+                    }).join('');
+                })
+                .catch(err => {
+                    loading.classList.add('hidden');
+                    resultsContainer.innerHTML = `<p class="col-span-full text-center text-red-400">네트워크 오류가 발생했습니다.</p>`;
+                });
+        }
+
+        function highlight(text, q) {
+            if(!text) return '';
+            const regex = new RegExp(`(${q})`, 'gi');
+            return text.replace(regex, '<mark>$1</mark>');
+        }
+    </script>
+</body>
+</html>
